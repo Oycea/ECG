@@ -50,7 +50,7 @@ for i, line in enumerate(lines):
 # plt.ylim([-200, 600])
 # plt.show()
 
-ecg_signal = np.array(lead_I)
+ecg_signal = np.array(lead_III)
 
 fs = 100  # Частота дискретизации в Гц
 duration = 351  # Длительность фрагмента в секундах
@@ -116,5 +116,75 @@ plt.ylabel('Amplitude (µV)')
 plt.legend()
 plt.grid(True)
 plt.xlim([2, 10])
-plt.ylim([-200, 600])
+plt.ylim([-600, 600])
 plt.show()
+
+# Сохранение найденных пиков в файл txt
+output_file = 'ecg_peaks.txt'
+
+with open(output_file, 'w') as file:
+    file.write("Peak Type\tTime (s)\tAmplitude (µV)\n")
+
+    for r_peak in r_peaks:
+        file.write(f"R\t{t[r_peak]}\t{ecg_signal[r_peak]}\n")
+
+    for q_peak in q_peaks:
+        file.write(f"Q\t{t[q_peak]}\t{ecg_signal[q_peak]}\n")
+
+    for s_peak in s_peaks:
+        file.write(f"S\t{t[s_peak]}\t{ecg_signal[s_peak]}\n")
+
+    for p_peak in p_peaks:
+        file.write(f"P\t{t[p_peak]}\t{ecg_signal[p_peak]}\n")
+
+print(f"Найденные пики сохранены в файле: {output_file}")
+
+rr_intervals = np.diff(r_peaks) / fs  # Вычисляем интервалы RR в секундах
+rr_std = np.std(rr_intervals)  # Стандартное отклонение интервалов RR
+print(f"Стандартное отклонение интервалов RR: {rr_std:.2f} сек")
+
+# Визуализация интервалов RR
+plt.figure(figsize=(10, 4))
+plt.plot(rr_intervals, marker='o', linestyle='-', color='b')
+plt.title('RR Intervals')
+plt.xlabel('Index')
+plt.ylabel('RR Interval (s)')
+plt.grid(True)
+plt.show()
+
+# Предполагая, что у нас есть массив с интервалами RR rr_intervals
+
+# SDNN (стандартное отклонение всех NN интервалов)
+sdnn = np.std(rr_intervals)
+print(f"SDNN: {sdnn:.2f} сек")
+
+# RMSSD (квадратный корень из среднеквадратической разности NN интервалов)
+nn_diff = np.diff(rr_intervals)
+rmssd = np.sqrt(np.mean(nn_diff ** 2))
+print(f"RMSSD: {rmssd:.2f} сек")
+
+# Оценка регулярности сердечного ритма и других особенностей
+with open('ecg_analysis_results.txt', 'w') as file:
+    file.write(f"Стандартное отклонение интервалов RR: {rr_std:.2f} сек\n")
+    file.write(f"SDNN: {sdnn:.2f} сек\n")
+    file.write(f"RMSSD: {rmssd:.2f} сек\n")
+    file.write("\nДополнительные особенности анализа:\n")
+    file.write("- Визуальный анализ: оценка формы QRS комплексов, наличие аритмий.\n")
+    file.write("- Частотные характеристики: оценка частоты сердечных сокращений.\n")
+
+print("Результаты анализа сохранены в файле 'ecg_analysis_results.txt'")
+
+# Оцениваем среднюю ЧСС
+heart_rate = 60 / np.mean(rr_intervals)  # Средний интервал RR -> ЧСС в ударах в минуту
+
+# Оцениваем возможное наличие тахикардии
+if heart_rate > 100:
+    print(f"Обнаружена тахикардия. Частота сердечных сокращений: {heart_rate:.2f} уд/мин")
+else:
+    print(f"Частота сердечных сокращений: {heart_rate:.2f} уд/мин")
+
+# Оценка наличия аритмий
+if sdnn < 0.05 or rmssd < 0.05:
+    print("Обнаружены аритмии")
+else:
+    print("Аритмии не обнаружены")
