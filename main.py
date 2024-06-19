@@ -2,7 +2,87 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import find_peaks
 
-filename = 'input.txt'
+
+def draw_pqrs():
+    t = np.arange(len(ecg_signal)) / sample_rate  # Создаём временной массив
+    plt.plot(t, ecg_signal, label='ECG Signal')
+    plt.plot(t[r_peaks], ecg_signal[r_peaks], 'ro', label='R Peaks')
+    plt.plot(t[q_peaks], ecg_signal[q_peaks], 'go', label='Q Peaks')
+    plt.plot(t[s_peaks], ecg_signal[s_peaks], 'bo', label='S Peaks')
+    plt.plot(t[p_peaks], ecg_signal[p_peaks], 'mo', label='P Peaks')
+    plt.title('ECG Signal with P, Q, R, and S Peaks')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude (µV)')
+    plt.legend()
+    plt.grid(True)
+    plt.xlim([2, 10])
+    plt.ylim([-1000, 1000])
+    plt.show()
+
+
+def draw_rr():
+    rr_intervals, _, _, _, _, _ = get_analysis()
+    plt.plot(rr_intervals, marker='o', linestyle='-', color='black')
+    plt.title('RR Intervals')
+    plt.xlabel('Index')
+    plt.ylabel('RR Interval (s)')
+    plt.grid(True)
+    plt.show()
+
+
+def get_analysis():
+    rr_intervals = np.diff(r_peaks) / sample_rate
+    nn_diff = np.diff(rr_intervals)
+
+    sdnn = np.std(rr_intervals)
+    rmssd = np.sqrt(np.mean(nn_diff ** 2))
+    heart_rate = 60 / np.mean(rr_intervals)
+    t_flag = False
+    a_flag = False
+
+    # Оцениваем возможное наличие тахикардии
+    if heart_rate > 100:
+        t_flag = True
+
+    # Оценка наличия аритмий
+    if sdnn < 0.05 or rmssd < 0.05:
+        a_flag = True
+
+    return rr_intervals, sdnn, rmssd, heart_rate, t_flag, a_flag
+
+
+def save_info():
+    _, sdnn, rmssd, heart_rate, t_flag, a_flag = get_analysis()
+
+    peaks_file = 'ecg_peaks.txt'
+    t = np.arange(len(ecg_signal)) / sample_rate
+    with open(peaks_file, 'w', encoding='utf-8') as w_file:
+        w_file.write("Peak Type\tTime (s)\tAmplitude (µV)\n")
+        for r_peak in r_peaks:
+            w_file.write(f"R\t{t[r_peak]}\t{ecg_signal[r_peak]}\n")
+        for q_peak in q_peaks:
+            w_file.write(f"Q\t{t[q_peak]}\t{ecg_signal[q_peak]}\n")
+        for s_peak in s_peaks:
+            w_file.write(f"S\t{t[s_peak]}\t{ecg_signal[s_peak]}\n")
+        for p_peak in p_peaks:
+            w_file.write(f"P\t{t[p_peak]}\t{ecg_signal[p_peak]}\n")
+    print(f"Найденные пики сохранены в файле: {peaks_file}")
+
+    print("Введите название файла для сохранения результатов:")
+    res_file = input()
+    with open(res_file, 'w', encoding='utf-8') as w_file:
+        w_file.write(f"SDNN (стандартное отклонение интервалов RR): {sdnn:.2f} сек\n")
+        w_file.write(f"RMSSD (стандартная статистическая мера ВСР): {rmssd:.2f} сек\n")
+        w_file.write(f"Частота сердечных сокращений: {heart_rate:.2f} уд/мин\n")
+        if t_flag:
+            w_file.write(f"Обнаружена тахикардия.\n")
+        if a_flag:
+            w_file.write(f"Обнаружены аритмии\n")
+    print(f"Результаты ЭКГ сохранены в файле: {res_file}")
+
+
+print("Введите название файла с ЭКГ:")
+filename = input()
 
 sample_rate = None
 fragment_duration = None
@@ -15,10 +95,13 @@ avR = []
 avL = []
 avF = []
 
+current_section = None
+separator = ';'
+
+# ЧТЕНИЕ КАРДИОГРАММЫ
+
 with open(filename, 'r', encoding='utf-8') as file:
     lines = file.readlines()
-
-current_section = None
 
 for i, line in enumerate(lines):
     line = line.strip()
@@ -32,159 +115,70 @@ for i, line in enumerate(lines):
         current_section = line[1:]
     elif current_section:
         if current_section == "I":
-            lead_I.extend(map(int, line.split(';')[:-1]))
+            lead_I.extend(map(int, line.split(separator)[:-1]))
         elif current_section == "II":
-            lead_II.extend(map(int, line.split(';')[:-1]))
+            lead_II.extend(map(int, line.split(separator)[:-1]))
         elif current_section == "III":
-            lead_III.extend(map(int, line.split(';')[:-1]))
+            lead_III.extend(map(int, line.split(separator)[:-1]))
         elif current_section == "avR":
-            avR.extend(map(int, line.split(';')[:-1]))
+            avR.extend(map(int, line.split(separator)[:-1]))
         elif current_section == "avL":
-            avL.extend(map(int, line.split(';')[:-1]))
+            avL.extend(map(int, line.split(separator)[:-1]))
         elif current_section == "avF":
-            avF.extend(map(int, line.split(';')[:-1]))
-
-# t = np.linspace(0, 851, len(lead))
-# plt.plot(t, lead)
-# plt.xlim([2, 10])
-# plt.ylim([-200, 600])
-# plt.show()
+            avF.extend(map(int, line.split(separator)[:-1]))
 
 ecg_signal = np.array(lead_III)
 
-fs = 100  # Частота дискретизации в Гц
-duration = 351  # Длительность фрагмента в секундах
-num_samples = 35096  # Количество сэмплов
+# ЗУБЦЫ R
 
-assert len(
-    ecg_signal) == num_samples, "Количество сэмплов не соответствует ожиданиям"
-
-# Найдём пики (зубцы R)
 # Минимальное расстояние между пиками (примерно 60% от 1 секунды, чтобы избежать ложных срабатываний)
-distance = int(fs * 0.6)
+distance = int(sample_rate * 0.6)
 r_peaks, _ = find_peaks(ecg_signal, distance=distance)
 
-# Поиск зубцов Q и S
+# ЗУБЦЫ Q и S
+
 # Зубцы Q находятся перед зубцами R, ищем локальные минимумы
-# Зубцы S находятся после зубцов R, ищем локальные минимумы
 q_peaks = []
+# Зубцы S находятся после зубцов R, ищем локальные минимумы
 s_peaks = []
 
-search_window_q = int(0.1 * fs)  # 100 мс до R-зубца
-search_window_s = int(0.1 * fs)  # 100 мс после R-зубца
+start_area_q = int(0.1 * sample_rate)  # 100 мс до R-зубца
+start_area_s = int(0.1 * sample_rate)  # 100 мс после R-зубца
 
 for r in r_peaks:
-    if r > search_window_q:
-        q_window = ecg_signal[r - search_window_q:r]
-        q_peak = np.argmin(q_window) + (r - search_window_q)
+    if r > start_area_q:
+        area_q = ecg_signal[r - start_area_q:r]
+        q_peak = np.argmin(area_q) + (r - start_area_q)
         q_peaks.append(q_peak)
 
-    if r + search_window_s < len(ecg_signal):
-        s_window = ecg_signal[r:r + search_window_s]
-        s_peak = np.argmin(s_window) + r
+    if r + start_area_s < len(ecg_signal):
+        area_s = ecg_signal[r:r + start_area_s]
+        s_peak = np.argmin(area_s) + r
         s_peaks.append(s_peak)
 
 q_peaks = np.array(q_peaks)
 s_peaks = np.array(s_peaks)
 
-# Поиск зубцов P
+# ЗУБЦЫ P
+
 # Зубцы P находятся перед зубцами Q, ищем локальные максимумы
 p_peaks = []
 
-search_window_p = int(0.2 * fs)  # 200 мс до Q-зубца
+start_area_p = int(0.2 * sample_rate)  # 200 мс до Q-зубца
 
 for q in q_peaks:
-    if q > search_window_p:
-        p_window = ecg_signal[q - search_window_p:q]
-        p_peak = np.argmax(p_window) + (q - search_window_p)
+    if q > start_area_p:
+        area_p = ecg_signal[q - start_area_p:q]
+        p_peak = np.argmax(area_p) + (q - start_area_p)
         p_peaks.append(p_peak)
 
 p_peaks = np.array(p_peaks)
 
-# Визуализация сигналов и найденных пиков
-t = np.arange(len(ecg_signal)) / fs  # Создаём временной массив
+# ВИЗУАЛИЗАЦИЯ
 
-plt.figure(figsize=(15, 6))
-plt.plot(t, ecg_signal, label='ECG Signal')
-plt.plot(t[r_peaks], ecg_signal[r_peaks], 'ro', label='R Peaks')
-plt.plot(t[q_peaks], ecg_signal[q_peaks], 'go', label='Q Peaks')
-plt.plot(t[s_peaks], ecg_signal[s_peaks], 'bo', label='S Peaks')
-plt.plot(t[p_peaks], ecg_signal[p_peaks], 'mo', label='P Peaks')
-plt.title('ECG Signal with P, Q, R, and S Peaks')
-plt.xlabel('Time (s)')
-plt.ylabel('Amplitude (µV)')
-plt.legend()
-plt.grid(True)
-plt.xlim([2, 10])
-plt.ylim([-600, 600])
-plt.show()
+draw_pqrs()
+draw_rr()
 
-# Сохранение найденных пиков в файл txt
-output_file = 'ecg_peaks.txt'
+# СОХРАНЕНИЕ РЕЗУЛЬТАТОВ
 
-with open(output_file, 'w') as file:
-    file.write("Peak Type\tTime (s)\tAmplitude (µV)\n")
-
-    for r_peak in r_peaks:
-        file.write(f"R\t{t[r_peak]}\t{ecg_signal[r_peak]}\n")
-
-    for q_peak in q_peaks:
-        file.write(f"Q\t{t[q_peak]}\t{ecg_signal[q_peak]}\n")
-
-    for s_peak in s_peaks:
-        file.write(f"S\t{t[s_peak]}\t{ecg_signal[s_peak]}\n")
-
-    for p_peak in p_peaks:
-        file.write(f"P\t{t[p_peak]}\t{ecg_signal[p_peak]}\n")
-
-print(f"Найденные пики сохранены в файле: {output_file}")
-
-rr_intervals = np.diff(r_peaks) / fs  # Вычисляем интервалы RR в секундах
-rr_std = np.std(rr_intervals)  # Стандартное отклонение интервалов RR
-print(f"Стандартное отклонение интервалов RR: {rr_std:.2f} сек")
-
-# Визуализация интервалов RR
-plt.figure(figsize=(10, 4))
-plt.plot(rr_intervals, marker='o', linestyle='-', color='b')
-plt.title('RR Intervals')
-plt.xlabel('Index')
-plt.ylabel('RR Interval (s)')
-plt.grid(True)
-plt.show()
-
-# Предполагая, что у нас есть массив с интервалами RR rr_intervals
-
-# SDNN (стандартное отклонение всех NN интервалов)
-sdnn = np.std(rr_intervals)
-print(f"SDNN: {sdnn:.2f} сек")
-
-# RMSSD (квадратный корень из среднеквадратической разности NN интервалов)
-nn_diff = np.diff(rr_intervals)
-rmssd = np.sqrt(np.mean(nn_diff ** 2))
-print(f"RMSSD: {rmssd:.2f} сек")
-
-# Оценка регулярности сердечного ритма и других особенностей
-with open('ecg_analysis_results.txt', 'w') as file:
-    file.write(f"Стандартное отклонение интервалов RR: {rr_std:.2f} сек\n")
-    file.write(f"SDNN: {sdnn:.2f} сек\n")
-    file.write(f"RMSSD: {rmssd:.2f} сек\n")
-    file.write("\nДополнительные особенности анализа:\n")
-    file.write("- Визуальный анализ: оценка формы QRS комплексов, наличие аритмий.\n")
-    file.write("- Частотные характеристики: оценка частоты сердечных сокращений.\n")
-
-print("Результаты анализа сохранены в файле 'ecg_analysis_results.txt'")
-
-# Оцениваем среднюю ЧСС
-heart_rate = 60 / np.mean(rr_intervals)  # Средний интервал RR -> ЧСС в ударах в минуту
-
-# Оцениваем возможное наличие тахикардии
-if heart_rate > 100:
-    print(f"Обнаружена тахикардия. Частота сердечных сокращений: {heart_rate:.2f} уд/мин")
-else:
-    print(f"Частота сердечных сокращений: {heart_rate:.2f} уд/мин")
-
-# Оценка наличия аритмий
-if sdnn < 0.05 or rmssd < 0.05:
-    print("Обнаружены аритмии")
-else:
-    print("Аритмии не обнаружены")
+save_info()

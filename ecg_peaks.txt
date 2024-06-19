@@ -1,4 +1,4 @@
-Peak Type	Time (s)	Amplitude (µV)
+Peak Type	Time (s)	Amplitude (ÂµV)
 R	0.33	632
 R	1.18	729
 R	1.98	749
