@@ -81,12 +81,17 @@ def save_info():
     print(f"Результаты ЭКГ сохранены в файле: {res_file}")
 
 
-print("Введите название файла с ЭКГ:")
-filename = input()
+# print("Введите название файла с ЭКГ:")
+filename = "input.txt"
 
 sample_rate = None
 fragment_duration = None
 num_samples = None
+
+# Отведения от конечностей (стандартные I, II, III + усиленные aVR, aVL, aVF)
+# позволяют увидеть стороны сердца только во фронтальной плоскости:
+# левую, правую и нижнюю
+# (верхняя нас интересует меньше, т.к. сверху у сердца предсердия и крупные сосуды).
 
 lead_I = []
 lead_II = []
@@ -127,15 +132,17 @@ for i, line in enumerate(lines):
         elif current_section == "avF":
             avF.extend(map(int, line.split(separator)[:-1]))
 
+lead_III = lead_III[10:]
 ecg_signal = np.array(lead_III)
 
-# ЗУБЦЫ R
+# ЗУБЦЫ R(возбуждение желудочков сердца)
 
 # Минимальное расстояние между пиками (примерно 60% от 1 секунды, чтобы избежать ложных срабатываний)
 distance = int(sample_rate * 0.6)
 r_peaks, _ = find_peaks(ecg_signal, distance=distance)
 
-# ЗУБЦЫ Q и S
+# ЗУБЦЫ Q(возбуждения левой половины межжелудочковой перегородки)
+# и S(конечное возбуждение основания левого желудочка сердца)
 
 # Зубцы Q находятся перед зубцами R, ищем локальные минимумы
 q_peaks = []
@@ -159,7 +166,7 @@ for r in r_peaks:
 q_peaks = np.array(q_peaks)
 s_peaks = np.array(s_peaks)
 
-# ЗУБЦЫ P
+# ЗУБЦЫ P(сокращение предсердий)
 
 # Зубцы P находятся перед зубцами Q, ищем локальные максимумы
 p_peaks = []
